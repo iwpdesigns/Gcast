@@ -28,16 +28,25 @@ fun CastButton(
         try {
             // Use task-based API: getSharedInstance returns a Task on newer SDKs
             try {
-                val task = CastContext.getSharedInstance(context) as? com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
-                task?.addOnSuccessListener { ctx ->
+                val raw = com.google.android.gms.cast.framework.CastContext.getSharedInstance(context)
+                if (raw is com.google.android.gms.tasks.Task<*>) {
+                    @Suppress("UNCHECKED_CAST")
+                    val task = raw as com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
+                    task.addOnSuccessListener { ctx: com.google.android.gms.cast.framework.CastContext ->
+                        castContext = ctx
+                        castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
+                    }
+                    task.addOnFailureListener { e: Exception -> e.printStackTrace() }
+                } else {
+                    // Older SDKs may return the CastContext directly
+                    val ctx = raw as? com.google.android.gms.cast.framework.CastContext
                     castContext = ctx
                     castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
                 }
-                task?.addOnFailureListener { e -> e.printStackTrace() }
             } catch (e: ClassCastException) {
                 // Older SDKs may return the CastContext directly
                 try {
-                    val ctx = CastContext.getSharedInstance(context) as? com.google.android.gms.cast.framework.CastContext
+                    val ctx = com.google.android.gms.cast.framework.CastContext.getSharedInstance(context) as? com.google.android.gms.cast.framework.CastContext
                     castContext = ctx
                     castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
                 } catch (ex: Exception) {
