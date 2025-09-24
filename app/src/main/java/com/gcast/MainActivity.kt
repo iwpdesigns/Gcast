@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
         // Keep using the synchronous API for now (suppressed) to maintain compatibility.
         try {
             @Suppress("DEPRECATION")
-            CastContext.getSharedInstance(this)
+            CastContext.getSharedIn. tance(this)
         } catch (e: Exception) {
             e.printStackTrace()
         }
