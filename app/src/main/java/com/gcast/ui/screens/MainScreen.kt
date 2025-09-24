@@ -201,67 +201,96 @@ fun MediaItemCard(
             val _localContext = LocalContext.current
             IconButton(onClick = {
                 val ctx = _localContext
-                try {
-                    val result = com.google.android.gms.cast.framework.CastContext.getSharedInstance(ctx)
-                    val castCtx = if (result is com.google.android.gms.cast.framework.CastContext) result else null
-                    val session = castCtx?.sessionManager?.currentCastSession
 
-                    if (session != null && session.isConnected) {
-                        try {
-                            val remote = session.remoteMediaClient
-                            val metadata = com.google.android.gms.cast.MediaMetadata(
-                                when (mediaItem.type) {
-                                    MediaItem.Type.VIDEO -> com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_MOVIE
-                                    MediaItem.Type.IMAGE -> com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_PHOTO
-                                    MediaItem.Type.AUDIO -> com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_MUSIC_TRACK
-                                }
-                            )
-                            metadata.putString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE, mediaItem.title)
-                            val mediaInfo = com.google.android.gms.cast.MediaInfo.Builder(mediaItem.url)
-                                .setStreamType(com.google.android.gms.cast.MediaInfo.STREAM_TYPE_BUFFERED)
-                                .setContentType(
+                // Helper that receives an optional CastContext and performs the cast or opens chooser
+                fun handleCastContext(castCtx: com.google.android.gms.cast.framework.CastContext?) {
+                    try {
+                        val session = castCtx?.sessionManager?.currentCastSession
+
+                        if (session != null && session.isConnected) {
+                            try {
+                                val remote = session.remoteMediaClient
+                                val metadata = com.google.android.gms.cast.MediaMetadata(
                                     when (mediaItem.type) {
-                                        MediaItem.Type.VIDEO -> "video/mp4"
-                                        MediaItem.Type.AUDIO -> "audio/mpeg"
-                                        MediaItem.Type.IMAGE -> "image/jpeg"
+                                        MediaItem.Type.VIDEO -> com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_MOVIE
+                                        MediaItem.Type.IMAGE -> com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_PHOTO
+                                        MediaItem.Type.AUDIO -> com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_MUSIC_TRACK
                                     }
                                 )
-                                .setMetadata(metadata)
-                                .build()
-
-                            // Prefer new MediaLoadRequestData-based API; fallback to deprecated load(mediaInfo, autoplay)
-                            try {
-                                val loadRequest = MediaLoadRequestData.Builder()
-                                    .setMediaInfo(mediaInfo)
-                                    .setAutoplay(true)
+                                metadata.putString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE, mediaItem.title)
+                                val mediaInfo = com.google.android.gms.cast.MediaInfo.Builder(mediaItem.url)
+                                    .setStreamType(com.google.android.gms.cast.MediaInfo.STREAM_TYPE_BUFFERED)
+                                    .setContentType(
+                                        when (mediaItem.type) {
+                                            MediaItem.Type.VIDEO -> "video/mp4"
+                                            MediaItem.Type.AUDIO -> "audio/mpeg"
+                                            MediaItem.Type.IMAGE -> "image/jpeg"
+                                        }
+                                    )
+                                    .setMetadata(metadata)
                                     .build()
-                                remote?.load(loadRequest)
-                            } catch (e: Exception) {
+
+                                // Prefer new MediaLoadRequestData-based API; fallback to deprecated load(mediaInfo, autoplay)
                                 try {
-                                    remote?.load(mediaInfo, true)
-                                } catch (inner: Exception) {
-                                    inner.printStackTrace()
+                                    val loadRequest = MediaLoadRequestData.Builder()
+                                        .setMediaInfo(mediaInfo)
+                                        .setAutoplay(true)
+                                        .build()
+                                    remote?.load(loadRequest)
+                                } catch (e: Exception) {
+                                    try {
+                                        remote?.load(mediaInfo, true)
+                                    } catch (inner: Exception) {
+                                        inner.printStackTrace()
+                                    }
                                 }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
                             }
-                        } catch (e: Exception) {
+                        } else {
+                            // show chooser dialog
+                            try {
+                                val fragment = androidx.mediarouter.app.MediaRouteChooserDialogFragment()
+                                val selector = androidx.mediarouter.media.MediaRouteSelector.Builder()
+                                    .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
+                                        .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+                                    .build()
+                                fragment.routeSelector = selector
+                                val activity = ctx as? androidx.fragment.app.FragmentActivity
+                                activity?.let {
+                                    fragment.show(it.supportFragmentManager, "media_route_chooser")
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                try {
+                    val raw = com.google.android.gms.cast.framework.CastContext.getSharedInstance(ctx)
+
+                    if (raw is com.google.android.gms.tasks.Task<*>) {
+                        @Suppress("UNCHECKED_CAST")
+                        val task = raw as com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
+                        task.addOnSuccessListener { castCtx: com.google.android.gms.cast.framework.CastContext ->
+                            handleCastContext(castCtx)
+                        }
+                        task.addOnFailureListener { e: Exception ->
                             e.printStackTrace()
+                            // Fallback: try to treat the raw result as CastContext if possible
+                            val maybeCtx = try {
+                                com.google.android.gms.cast.framework.CastContext.getSharedInstance(ctx) as? com.google.android.gms.cast.framework.CastContext
+                            } catch (ex: Exception) {
+                                null
+                            }
+                            handleCastContext(maybeCtx)
                         }
                     } else {
-                        // show chooser dialog
-                        try {
-                            val fragment = androidx.mediarouter.app.MediaRouteChooserDialogFragment()
-                            val selector = androidx.mediarouter.media.MediaRouteSelector.Builder()
-                                .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
-                                    .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
-                                .build()
-                            fragment.routeSelector = selector
-                            val activity = ctx as? androidx.fragment.app.FragmentActivity
-                            activity?.let {
-                                fragment.show(it.supportFragmentManager, "media_route_chooser")
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
+                        val castCtx = if (raw is com.google.android.gms.cast.framework.CastContext) raw as com.google.android.gms.cast.framework.CastContext else null
+                        handleCastContext(castCtx)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
