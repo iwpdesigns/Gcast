@@ -26,7 +26,9 @@ fun CastButton(
 
     LaunchedEffect(context) {
         try {
-            castContext = CastContext.getSharedInstance(context)
+            @Suppress("DEPRECATION")
+            val ctx = CastContext.getSharedInstance(context)
+            castContext = ctx
             castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
         } catch (e: Exception) {
             e.printStackTrace()

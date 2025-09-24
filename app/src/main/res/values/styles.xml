@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dedicated Cast controller dark theme that specifically targets cast UI -->
+    <style name="Theme.CastVideosDark" parent="Theme.GCast">
+        <!-- Use dark appearances or override attributes if needed -->
+    </style>
+</resources>

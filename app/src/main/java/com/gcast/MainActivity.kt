@@ -24,11 +24,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Initialize Cast Context
+        // Initialize Cast Context asynchronously using Task-based API
+        // Keep using the synchronous API for now (suppressed) to maintain compatibility.
         try {
+            @Suppress("DEPRECATION")
             CastContext.getSharedInstance(this)
         } catch (e: Exception) {
-            // Handle cast initialization error
             e.printStackTrace()
         }
 
