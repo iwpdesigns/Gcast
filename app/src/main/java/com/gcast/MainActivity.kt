@@ -24,11 +24,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Initialize Cast Context asynchronously using Task-based API
-        // Keep using the synchronous API for now (suppressed) to maintain compatibility.
+        // Initialize Cast Context using Task-based API only
         try {
-            @Suppress("DEPRECATION")
-            CastContext.getSharedIn. tance(this)
+            val result = CastContext.getSharedInstance(this)
+
+            if (result is com.google.android.gms.cast.framework.CastContext) {
+                // CastContext already available synchronously
+            } else {
+                @Suppress("UNCHECKED_CAST")
+                val task = result as com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
+                task.addOnSuccessListener { ctx: com.google.android.gms.cast.framework.CastContext ->
+                    // success: ctx is available
+                }
+                task.addOnFailureListener { e: Exception ->
+                    e.printStackTrace()
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

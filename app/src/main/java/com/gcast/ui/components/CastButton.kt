@@ -26,10 +26,22 @@ fun CastButton(
 
     LaunchedEffect(context) {
         try {
-            @Suppress("DEPRECATION")
-            val ctx = CastContext.getSharedInstance(context)
-            castContext = ctx
-            castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
+            val result = CastContext.getSharedInstance(context)
+
+            if (result is com.google.android.gms.cast.framework.CastContext) {
+                castContext = result
+                castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
+            } else {
+                @Suppress("UNCHECKED_CAST")
+                val task = result as com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
+                task.addOnSuccessListener { ctx: com.google.android.gms.cast.framework.CastContext ->
+                    castContext = ctx
+                    castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
+                }
+                task.addOnFailureListener { e: Exception ->
+                    e.printStackTrace()
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
