@@ -24,20 +24,21 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Initialize Cast Context using Task-based API only
+        // Initialize Cast Context using task-based API with safe fallback for older SDKs
         try {
-            val result = CastContext.getSharedInstance(this)
-
-            if (result is com.google.android.gms.cast.framework.CastContext) {
-                // CastContext already available synchronously
-            } else {
-                @Suppress("UNCHECKED_CAST")
-                val task = result as com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
-                task.addOnSuccessListener { ctx: com.google.android.gms.cast.framework.CastContext ->
-                    // success: ctx is available
+            try {
+                val task = CastContext.getSharedInstance(this) as? com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
+                task?.addOnSuccessListener { ctx ->
+                    // CastContext available
                 }
-                task.addOnFailureListener { e: Exception ->
-                    e.printStackTrace()
+                task?.addOnFailureListener { e -> e.printStackTrace() }
+            } catch (e: ClassCastException) {
+                // Older SDK returned CastContext directly
+                try {
+                    val ctx = CastContext.getSharedInstance(this) as? com.google.android.gms.cast.framework.CastContext
+                    // ctx ready
+                } catch (ex: Exception) {
+                    ex.printStackTrace()
                 }
             }
         } catch (e: Exception) {
