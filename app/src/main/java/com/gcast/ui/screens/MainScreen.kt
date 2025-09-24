@@ -27,6 +27,7 @@ import com.gcast.data.MediaItem
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.media.MediaLoadRequestData
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -227,7 +228,21 @@ fun MediaItemCard(
                                 )
                                 .setMetadata(metadata)
                                 .build()
-                            remote?.load(mediaInfo, true)
+
+                            // Prefer new MediaLoadRequestData-based API; fallback to deprecated load(mediaInfo, autoplay)
+                            try {
+                                val loadRequest = MediaLoadRequestData.Builder()
+                                    .setMediaInfo(mediaInfo)
+                                    .setAutoplay(true)
+                                    .build()
+                                remote?.load(loadRequest)
+                            } catch (e: Exception) {
+                                try {
+                                    remote?.load(mediaInfo, true)
+                                } catch (inner: Exception) {
+                                    inner.printStackTrace()
+                                }
+                            }
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
