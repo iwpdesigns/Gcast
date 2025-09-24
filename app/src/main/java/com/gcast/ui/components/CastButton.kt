@@ -26,20 +26,22 @@ fun CastButton(
 
     LaunchedEffect(context) {
         try {
-            val result = CastContext.getSharedInstance(context)
-
-            if (result is com.google.android.gms.cast.framework.CastContext) {
-                castContext = result
-                castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
-            } else {
-                @Suppress("UNCHECKED_CAST")
-                val task = result as com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
-                task.addOnSuccessListener { ctx: com.google.android.gms.cast.framework.CastContext ->
+            // Use task-based API: getSharedInstance returns a Task on newer SDKs
+            try {
+                val task = CastContext.getSharedInstance(context) as? com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
+                task?.addOnSuccessListener { ctx ->
                     castContext = ctx
                     castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
                 }
-                task.addOnFailureListener { e: Exception ->
-                    e.printStackTrace()
+                task?.addOnFailureListener { e -> e.printStackTrace() }
+            } catch (e: ClassCastException) {
+                // Older SDKs may return the CastContext directly
+                try {
+                    val ctx = CastContext.getSharedInstance(context) as? com.google.android.gms.cast.framework.CastContext
+                    castContext = ctx
+                    castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
+                } catch (ex: Exception) {
+                    ex.printStackTrace()
                 }
             }
         } catch (e: Exception) {
@@ -84,32 +86,29 @@ fun CastButton(
 
     IconButton(
         onClick = {
-            castContext?.let { cc ->
-                try {
-                    when (castState) {
-                        CastState.CONNECTED -> {
-                            cc.sessionManager.endCurrentSession(true)
+            // Use the castContext if available to end sessions; otherwise show chooser
+            try {
+                if (castState == CastState.CONNECTED) {
+                    castContext?.sessionManager?.endCurrentSession(true)
+                } else if (castState == CastState.NOT_CONNECTED) {
+                    // Show the MediaRoute chooser safely via FragmentActivity
+                    try {
+                        val fragment = androidx.mediarouter.app.MediaRouteChooserDialogFragment()
+                        val selector = androidx.mediarouter.media.MediaRouteSelector.Builder()
+                            .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
+                                .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+                            .build()
+                        fragment.routeSelector = selector
+                        val activity = context as? androidx.fragment.app.FragmentActivity
+                        activity?.let {
+                            fragment.show(it.supportFragmentManager, "media_route_chooser")
                         }
-                        CastState.NOT_CONNECTED -> {
-                            try {
-                                val fragment = androidx.mediarouter.app.MediaRouteChooserDialogFragment()
-                                val selector = androidx.mediarouter.media.MediaRouteSelector.Builder()
-                                    .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
-                                        .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
-                                    .build()
-                                fragment.routeSelector = selector
-                                val activity = context as? androidx.fragment.app.FragmentActivity
-                                activity?.let {
-                                    fragment.show(it.supportFragmentManager, "media_route_chooser")
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         },
         modifier = modifier,
