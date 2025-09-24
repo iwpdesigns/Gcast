@@ -84,15 +84,27 @@ fun CastButton(
 
     IconButton(
         onClick = {
-            castContext?.let { context ->
+            castContext?.let { cc ->
                 try {
                     when (castState) {
                         CastState.CONNECTED -> {
-                            context.sessionManager.endCurrentSession(true)
+                            cc.sessionManager.endCurrentSession(true)
                         }
                         CastState.NOT_CONNECTED -> {
-                            // Show cast device selection dialog
-                            // This would typically be handled by the Cast SDK UI
+                            try {
+                                val fragment = androidx.mediarouter.app.MediaRouteChooserDialogFragment()
+                                val selector = androidx.mediarouter.media.MediaRouteSelector.Builder()
+                                    .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
+                                        .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+                                    .build()
+                                fragment.routeSelector = selector
+                                val activity = context as? androidx.fragment.app.FragmentActivity
+                                activity?.let {
+                                    fragment.show(it.supportFragmentManager, "media_route_chooser")
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                         }
                     }
                 } catch (e: Exception) {

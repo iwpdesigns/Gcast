@@ -1,5 +1,6 @@
 package com.gcast.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,6 +24,9 @@ import androidx.compose.ui.unit.sp
 import com.gcast.R
 import com.gcast.ui.components.CastButton
 import com.gcast.data.MediaItem
+import com.google.android.gms.cast.MediaInfo
+import com.google.android.gms.cast.MediaMetadata
+import com.google.android.gms.cast.framework.CastContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -192,12 +196,68 @@ fun MediaItemCard(
                 )
             }
             
-            // Cast icon
-            Icon(
-                imageVector = Icons.Default.Cast,
-                contentDescription = "Cast this media",
-                tint = MaterialTheme.colorScheme.primary
-            )
+            // Cast icon (loads if session active, otherwise shows chooser)
+            val _localContext = LocalContext.current
+            IconButton(onClick = {
+                val ctx = _localContext
+                try {
+                    val result = com.google.android.gms.cast.framework.CastContext.getSharedInstance(ctx)
+                    val castCtx = if (result is com.google.android.gms.cast.framework.CastContext) result else null
+                    val session = castCtx?.sessionManager?.currentCastSession
+
+                    if (session != null && session.isConnected) {
+                        try {
+                            val remote = session.remoteMediaClient
+                            val metadata = com.google.android.gms.cast.MediaMetadata(
+                                when (mediaItem.type) {
+                                    MediaItem.Type.VIDEO -> com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_MOVIE
+                                    MediaItem.Type.IMAGE -> com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_PHOTO
+                                    MediaItem.Type.AUDIO -> com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_MUSIC_TRACK
+                                }
+                            )
+                            metadata.putString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE, mediaItem.title)
+                            val mediaInfo = com.google.android.gms.cast.MediaInfo.Builder(mediaItem.url)
+                                .setStreamType(com.google.android.gms.cast.MediaInfo.STREAM_TYPE_BUFFERED)
+                                .setContentType(
+                                    when (mediaItem.type) {
+                                        MediaItem.Type.VIDEO -> "video/mp4"
+                                        MediaItem.Type.AUDIO -> "audio/mpeg"
+                                        MediaItem.Type.IMAGE -> "image/jpeg"
+                                    }
+                                )
+                                .setMetadata(metadata)
+                                .build()
+                            remote?.load(mediaInfo, true)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    } else {
+                        // show chooser dialog
+                        try {
+                            val fragment = androidx.mediarouter.app.MediaRouteChooserDialogFragment()
+                            val selector = androidx.mediarouter.media.MediaRouteSelector.Builder()
+                                .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
+                                    .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+                                .build()
+                            fragment.routeSelector = selector
+                            val activity = ctx as? androidx.fragment.app.FragmentActivity
+                            activity?.let {
+                                fragment.show(it.supportFragmentManager, "media_route_chooser")
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }) {
+                Icon(
+                    imageVector = Icons.Default.Cast,
+                    contentDescription = "Cast this media",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }
