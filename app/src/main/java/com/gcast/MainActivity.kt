@@ -24,26 +24,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Initialize Cast Context using task-based API with safe fallback for older SDKs
-        try {
-            try {
-                val task = CastContext.getSharedInstance(this) as? com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
-                task?.addOnSuccessListener { ctx ->
-                    // CastContext available
-                }
-                task?.addOnFailureListener { e -> e.printStackTrace() }
-            } catch (e: ClassCastException) {
-                // Older SDK returned CastContext directly
-                try {
-                    val ctx = CastContext.getSharedInstance(this) as? com.google.android.gms.cast.framework.CastContext
-                    // ctx ready
-                } catch (ex: Exception) {
-                    ex.printStackTrace()
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        // Initialize Cast Context (compat shim handles Task vs direct return)
+        com.gcast.cast.CastCompat.getCastContext(this,
+            onSuccess = { _ -> /* initialized */ },
+            onFailure = { e -> e.printStackTrace() }
+        )
 
         setContent {
             GCastTheme {

@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastState
 import com.google.android.gms.cast.framework.CastStateListener
+import android.util.Log
 import com.gcast.ui.theme.CastBlue
 import com.gcast.ui.theme.CastConnected
 import com.gcast.ui.theme.CastDisconnected
@@ -25,37 +26,13 @@ fun CastButton(
     var castContext by remember { mutableStateOf<CastContext?>(null) }
 
     LaunchedEffect(context) {
-        try {
-            // Use task-based API: getSharedInstance returns a Task on newer SDKs
-            try {
-                val raw = com.google.android.gms.cast.framework.CastContext.getSharedInstance(context)
-                if (raw is com.google.android.gms.tasks.Task<*>) {
-                    @Suppress("UNCHECKED_CAST")
-                    val task = raw as com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
-                    task.addOnSuccessListener { ctx: com.google.android.gms.cast.framework.CastContext ->
-                        castContext = ctx
-                        castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
-                    }
-                    task.addOnFailureListener { e: Exception -> e.printStackTrace() }
-                } else {
-                    // Older SDKs may return the CastContext directly
-                    val ctx = raw as? com.google.android.gms.cast.framework.CastContext
-                    castContext = ctx
-                    castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
-                }
-            } catch (e: ClassCastException) {
-                // Older SDKs may return the CastContext directly
-                try {
-                    val ctx = com.google.android.gms.cast.framework.CastContext.getSharedInstance(context) as? com.google.android.gms.cast.framework.CastContext
-                    castContext = ctx
-                    castState = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
-                } catch (ex: Exception) {
-                    ex.printStackTrace()
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        com.gcast.cast.CastCompat.getCastContext(context,
+            onSuccess = { ctx ->
+                castContext = ctx
+                castState = ctx.castState
+            },
+            onFailure = { e -> e.printStackTrace() }
+        )
     }
 
     DisposableEffect(castContext) {
@@ -95,29 +72,38 @@ fun CastButton(
 
     IconButton(
         onClick = {
-            // Use the castContext if available to end sessions; otherwise show chooser
+            Log.d("CastButton", "onClick invoked, castState=$castState, castContext=${castContext != null}")
             try {
-                if (castState == CastState.CONNECTED) {
-                    castContext?.sessionManager?.endCurrentSession(true)
-                } else if (castState == CastState.NOT_CONNECTED) {
-                    // Show the MediaRoute chooser safely via FragmentActivity
-                    try {
-                        val fragment = androidx.mediarouter.app.MediaRouteChooserDialogFragment()
-                        val selector = androidx.mediarouter.media.MediaRouteSelector.Builder()
-                            .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
-                                .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
-                            .build()
-                        fragment.routeSelector = selector
-                        val activity = context as? androidx.fragment.app.FragmentActivity
-                        activity?.let {
-                            fragment.show(it.supportFragmentManager, "media_route_chooser")
+                when (castState) {
+                    CastState.CONNECTED -> {
+                        Log.d("CastButton", "ending current session")
+                        castContext?.sessionManager?.endCurrentSession(true)
+                    }
+                    CastState.NOT_CONNECTED -> {
+                        Log.d("CastButton", "attempting to show MediaRoute chooser")
+                        // Use modern Cast integration - let the Cast SDK handle the UI
+                        try {
+                            val activity = context as? androidx.fragment.app.FragmentActivity
+                            activity?.let { fragmentActivity ->
+                                // Create a MediaRouteButton programmatically and trigger its click
+                                val mediaRouteButton = androidx.mediarouter.app.MediaRouteButton(context)
+                                mediaRouteButton.routeSelector = androidx.mediarouter.media.MediaRouteSelector.Builder()
+                                    .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
+                                        .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+                                    .build()
+                                mediaRouteButton.performClick()
+                                Log.d("CastButton", "MediaRouteButton.performClick() called")
+                            }
+                        } catch (e: Exception) {
+                            Log.e("CastButton", "error showing chooser", e)
                         }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                    }
+                    else -> {
+                        Log.d("CastButton", "Cast not available or connecting")
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("CastButton", "error handling cast onClick", e)
             }
         },
         modifier = modifier,

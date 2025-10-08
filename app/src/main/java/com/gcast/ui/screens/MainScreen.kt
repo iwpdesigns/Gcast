@@ -27,7 +27,6 @@ import com.gcast.data.MediaItem
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.framework.CastContext
-import com.google.android.gms.cast.framework.media.MediaLoadRequestData
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,12 +47,10 @@ fun MainScreen() {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
+            // restored gradient title for brand-style appearance
+            com.gcast.ui.theme.GradientText(
                 text = "GCast",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.Bold
-                ),
-                color = MaterialTheme.colorScheme.primary
+                modifier = Modifier,
             )
             CastButton()
         }
@@ -202,10 +199,10 @@ fun MediaItemCard(
             IconButton(onClick = {
                 val ctx = _localContext
 
-                // Helper that receives an optional CastContext and performs the cast or opens chooser
-                fun handleCastContext(castCtx: com.google.android.gms.cast.framework.CastContext?) {
+                // Helper that receives a CastContext and performs the cast or opens chooser
+                fun handleCastContext(castCtx: com.google.android.gms.cast.framework.CastContext) {
                     try {
-                        val session = castCtx?.sessionManager?.currentCastSession
+                        val session = castCtx.sessionManager.currentCastSession
 
                         if (session != null && session.isConnected) {
                             try {
@@ -230,35 +227,88 @@ fun MediaItemCard(
                                     .setMetadata(metadata)
                                     .build()
 
-                                // Prefer new MediaLoadRequestData-based API; fallback to deprecated load(mediaInfo, autoplay)
+                                // Prefer the newest MediaLoadRequestData / MediaLoadRequest if available.
+                                var invoked = false
                                 try {
-                                    val loadRequest = MediaLoadRequestData.Builder()
-                                        .setMediaInfo(mediaInfo)
-                                        .setAutoplay(true)
-                                        .build()
-                                    remote?.load(loadRequest)
+                                    // Try to construct a MediaLoadRequestData via reflection
+                                    val mlrdClass = try { Class.forName("com.google.android.gms.cast.MediaLoadRequestData") } catch (e: Exception) { null }
+                                    if (mlrdClass != null) {
+                                        val builderClass = try { Class.forName("com.google.android.gms.cast.MediaLoadRequestData\$Builder") } catch (e: Exception) { null }
+                                        if (builderClass != null) {
+                                            val builder = builderClass.getConstructor().newInstance()
+                                            // setMediaInfo(MediaInfo)
+                                            builder.javaClass.getMethod("setMediaInfo", com.google.android.gms.cast.MediaInfo::class.java)
+                                                .invoke(builder, mediaInfo)
+                                            // setAutoplay(true)
+                                            try {
+                                                builder.javaClass.getMethod("setAutoplay", java.lang.Boolean::class.javaPrimitiveType)
+                                                    .invoke(builder, java.lang.Boolean.TRUE)
+                                            } catch (_: Throwable) { /* some versions use boolean primitive, ignore if not present */ }
+                                            val mlrd = builder.javaClass.getMethod("build").invoke(builder)
+                                            // Now attempt to call remote.load(mlrd)
+                                            try {
+                                                val loadMethod = remote?.javaClass?.methods?.firstOrNull { m ->
+                                                    val params = m.parameterTypes
+                                                    params.size == 1 && params[0].name == mlrd.javaClass.name
+                                                }
+                                                if (loadMethod != null && remote != null) {
+                                                    loadMethod.invoke(remote, mlrd)
+                                                    invoked = true
+                                                }
+                                            } catch (_: Throwable) {
+                                                // ignore and fall through
+                                            }
+                                        }
+                                    }
                                 } catch (e: Exception) {
+                                    // ignore and try next
+                                }
+
+                                if (!invoked) {
+                                    // Try MediaLoadOptions if present
                                     try {
+                                        val mediaLoadOptionsClass = try { Class.forName("com.google.android.gms.cast.MediaLoadOptions") } catch (e: Exception) { null }
+                                        if (mediaLoadOptionsClass != null) {
+                                            val builder = mediaLoadOptionsClass.getMethod("newBuilder").invoke(null)
+                                            builder.javaClass.getMethod("setAutoplay", java.lang.Boolean::class.javaPrimitiveType).invoke(builder, java.lang.Boolean.TRUE)
+                                            val options = builder.javaClass.getMethod("build").invoke(builder)
+                                            // attempt remote.load(mediaInfo, options)
+                                            try {
+                                                val m = remote?.javaClass?.getMethod("load", com.google.android.gms.cast.MediaInfo::class.java, options.javaClass)
+                                                m?.invoke(remote, mediaInfo, options)
+                                                invoked = true
+                                            } catch (_: Throwable) {
+                                                // fallthrough
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        // ignore
+                                    }
+                                }
+
+                                if (!invoked) {
+                                    // Fallback to legacy API
+                                    try {
+                                        @Suppress("DEPRECATION")
                                         remote?.load(mediaInfo, true)
-                                    } catch (inner: Exception) {
-                                        inner.printStackTrace()
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
                                     }
                                 }
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
                         } else {
-                            // show chooser dialog
+                            // Show chooser dialog using modern MediaRouter
                             try {
-                                val fragment = androidx.mediarouter.app.MediaRouteChooserDialogFragment()
-                                val selector = androidx.mediarouter.media.MediaRouteSelector.Builder()
-                                    .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
-                                        .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
-                                    .build()
-                                fragment.routeSelector = selector
                                 val activity = ctx as? androidx.fragment.app.FragmentActivity
                                 activity?.let {
-                                    fragment.show(it.supportFragmentManager, "media_route_chooser")
+                                    val mediaRouteButton = androidx.mediarouter.app.MediaRouteButton(ctx)
+                                    mediaRouteButton.routeSelector = androidx.mediarouter.media.MediaRouteSelector.Builder()
+                                        .addControlCategory(com.google.android.gms.cast.CastMediaControlIntent
+                                            .categoryForCast(com.google.android.gms.cast.CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+                                        .build()
+                                    mediaRouteButton.performClick()
                                 }
                             } catch (e: Exception) {
                                 e.printStackTrace()
@@ -269,32 +319,11 @@ fun MediaItemCard(
                     }
                 }
 
-                try {
-                    val raw = com.google.android.gms.cast.framework.CastContext.getSharedInstance(ctx)
-
-                    if (raw is com.google.android.gms.tasks.Task<*>) {
-                        @Suppress("UNCHECKED_CAST")
-                        val task = raw as com.google.android.gms.tasks.Task<com.google.android.gms.cast.framework.CastContext>
-                        task.addOnSuccessListener { castCtx: com.google.android.gms.cast.framework.CastContext ->
-                            handleCastContext(castCtx)
-                        }
-                        task.addOnFailureListener { e: Exception ->
-                            e.printStackTrace()
-                            // Fallback: try to treat the raw result as CastContext if possible
-                            val maybeCtx = try {
-                                com.google.android.gms.cast.framework.CastContext.getSharedInstance(ctx) as? com.google.android.gms.cast.framework.CastContext
-                            } catch (ex: Exception) {
-                                null
-                            }
-                            handleCastContext(maybeCtx)
-                        }
-                    } else {
-                        val castCtx = if (raw is com.google.android.gms.cast.framework.CastContext) raw as com.google.android.gms.cast.framework.CastContext else null
-                        handleCastContext(castCtx)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                // Get CastContext using compatibility helper
+                com.gcast.cast.CastCompat.getCastContext(ctx,
+                    onSuccess = { castCtx -> handleCastContext(castCtx) },
+                    onFailure = { e -> e.printStackTrace() }
+                )
             }) {
                 Icon(
                     imageVector = Icons.Default.Cast,
