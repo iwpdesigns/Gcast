@@ -227,73 +227,10 @@ fun MediaItemCard(
                                     .setMetadata(metadata)
                                     .build()
 
-                                // Prefer the newest MediaLoadRequestData / MediaLoadRequest if available.
-                                var invoked = false
-                                try {
-                                    // Try to construct a MediaLoadRequestData via reflection
-                                    val mlrdClass = try { Class.forName("com.google.android.gms.cast.MediaLoadRequestData") } catch (e: Exception) { null }
-                                    if (mlrdClass != null) {
-                                        val builderClass = try { Class.forName("com.google.android.gms.cast.MediaLoadRequestData\$Builder") } catch (e: Exception) { null }
-                                        if (builderClass != null) {
-                                            val builder = builderClass.getConstructor().newInstance()
-                                            // setMediaInfo(MediaInfo)
-                                            builder.javaClass.getMethod("setMediaInfo", com.google.android.gms.cast.MediaInfo::class.java)
-                                                .invoke(builder, mediaInfo)
-                                            // setAutoplay(true)
-                                            try {
-                                                builder.javaClass.getMethod("setAutoplay", java.lang.Boolean::class.javaPrimitiveType)
-                                                    .invoke(builder, java.lang.Boolean.TRUE)
-                                            } catch (_: Throwable) { /* some versions use boolean primitive, ignore if not present */ }
-                                            val mlrd = builder.javaClass.getMethod("build").invoke(builder)
-                                            // Now attempt to call remote.load(mlrd)
-                                            try {
-                                                val loadMethod = remote?.javaClass?.methods?.firstOrNull { m ->
-                                                    val params = m.parameterTypes
-                                                    params.size == 1 && params[0].name == mlrd.javaClass.name
-                                                }
-                                                if (loadMethod != null && remote != null) {
-                                                    loadMethod.invoke(remote, mlrd)
-                                                    invoked = true
-                                                }
-                                            } catch (_: Throwable) {
-                                                // ignore and fall through
-                                            }
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    // ignore and try next
-                                }
-
-                                if (!invoked) {
-                                    // Try MediaLoadOptions if present
-                                    try {
-                                        val mediaLoadOptionsClass = try { Class.forName("com.google.android.gms.cast.MediaLoadOptions") } catch (e: Exception) { null }
-                                        if (mediaLoadOptionsClass != null) {
-                                            val builder = mediaLoadOptionsClass.getMethod("newBuilder").invoke(null)
-                                            builder.javaClass.getMethod("setAutoplay", java.lang.Boolean::class.javaPrimitiveType).invoke(builder, java.lang.Boolean.TRUE)
-                                            val options = builder.javaClass.getMethod("build").invoke(builder)
-                                            // attempt remote.load(mediaInfo, options)
-                                            try {
-                                                val m = remote?.javaClass?.getMethod("load", com.google.android.gms.cast.MediaInfo::class.java, options.javaClass)
-                                                m?.invoke(remote, mediaInfo, options)
-                                                invoked = true
-                                            } catch (_: Throwable) {
-                                                // fallthrough
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        // ignore
-                                    }
-                                }
-
-                                if (!invoked) {
-                                    // Fallback to legacy API
-                                    try {
-                                        @Suppress("DEPRECATION")
-                                        remote?.load(mediaInfo, true)
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
+                                // Use centralized CastMediaHelper for modern API with fallbacks
+                                val success = com.gcast.cast.CastMediaHelper.loadMedia(remote, mediaInfo, autoplay = true)
+                                if (!success) {
+                                    android.util.Log.w("MainScreen", "Failed to load media on Cast device")
                                 }
                             } catch (e: Exception) {
                                 e.printStackTrace()

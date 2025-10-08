@@ -73,9 +73,47 @@ export ANDROID_KEY_PASSWORD=yourkeypassword
 ./gradlew :app:bundleRelease
 ```
 
-## Notes
+## Play App Signing Best Practices
 
-- For Play Store distribution, consider using Play App Signing where Google manages the app signing key and you upload an upload key.
-- Rotate keys and revoke access if a key is compromised.
+### Recommended Approach: Use Play App Signing
 
-If you want, I can add the `.github/workflows/release.yml` example directly to the repo.
+1. **Enable Play App Signing** in Google Play Console:
+   - Go to Play Console → Your App → Release → Setup → App Signing
+   - Let Google generate and manage your app signing key
+   - You only need to generate an "upload key" for signing your AABs
+
+2. **Generate Upload Key** (not your app signing key):
+   ```bash
+   keytool -genkey -v -keystore upload-key.jks -keyalg RSA -keysize 2048 -validity 25000 -alias upload
+   ```
+
+3. **Benefits**:
+   - Google manages the app signing key securely
+   - You can rotate upload keys if compromised
+   - Supports key upgrade to stronger algorithms
+   - Protects against key loss
+
+### Key Rotation
+
+If your upload key is compromised:
+
+1. Generate a new upload key
+2. Create a key upgrade request in Play Console
+3. Upload the new public key certificate
+4. Update your CI secrets with the new keystore
+
+### Security Checklist
+
+- ✅ Never commit keystores or passwords to version control
+- ✅ Use environment variables or CI secrets for sensitive data
+- ✅ Enable Play App Signing for new apps
+- ✅ Regularly rotate upload keys (annually recommended)
+- ✅ Use strong passwords (consider password managers)
+- ✅ Limit access to signing secrets to essential team members
+- ✅ Monitor for unauthorized access to your CI/signing infrastructure
+
+## Implementation Notes
+
+- The GitHub Actions workflow (`.github/workflows/release.yml`) is included in this repository
+- For testing, builds will be unsigned if no signing environment variables are provided
+- The workflow supports manual triggering via `workflow_dispatch` for testing
